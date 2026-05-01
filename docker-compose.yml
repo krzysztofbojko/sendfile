@@ -1,0 +1,28 @@
+version: '3.8'
+
+services:
+  backend:
+    build: 
+      context: ./backend
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=sqlite+aiosqlite:///./data/sendfile.db
+    volumes:
+      - ./backend:/app
+      - sendfile_media:/protected_media
+      - sendfile_db_data:/app/data
+
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "8080:80"
+    volumes:
+      - ./infra/nginx.conf:/etc/nginx/nginx.conf:ro
+      - sendfile_media:/protected_media:ro
+    depends_on:
+      - backend
+
+volumes:
+  sendfile_media:
+  sendfile_db_data:

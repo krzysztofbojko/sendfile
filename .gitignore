@@ -1,0 +1,11 @@
+node_modules/
+__pycache__/
+*.pyc
+.env
+.DS_Store
+dist/
+build/
+backend/data/
+backend/__pycache__/
+data/
+protected_media/
