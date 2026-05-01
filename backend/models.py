@@ -10,6 +10,7 @@ class User(Base):
     username = Column(String, unique=True, index=True, nullable=False)
     pin_hash = Column(String, nullable=False)
     is_admin = Column(Boolean, default=False)
+    is_blocked = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
     directories = relationship("Directory", back_populates="owner")

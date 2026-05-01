@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { LogOut, Users, FolderPlus, UploadCloud, Plus, UserPlus, HardDrive, Trash2, Key, FileText, Download } from 'lucide-react';
+import { LogOut, Users, FolderPlus, UploadCloud, Plus, UserPlus, HardDrive, Trash2, Key, FileText, Download, Lock, Unlock } from 'lucide-react';
 import { useDropzone } from 'react-dropzone';
 import { apiFetch } from '../api';
 import { AuditLogs } from './AuditLogs';
@@ -8,6 +8,7 @@ interface UserData {
   id: number;
   username: string;
   is_admin: boolean;
+  is_blocked: boolean;
 }
 
 interface Directory {
@@ -115,14 +116,22 @@ export const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout })
     }
   };
 
-  const handleDeleteUser = async (userId: number) => {
-    if (!window.confirm("Czy na pewno chcesz usunąć tego użytkownika? Wszystkie jego dane (katalogi, pliki, logi) zostaną trwale usunięte!")) return;
-    const res = await apiFetch(`/api/admin/users/${userId}`, { method: 'DELETE' });
+  const handleToggleBlock = async (user: UserData) => {
+    const confirmMsg = user.is_blocked 
+      ? "Czy na pewno chcesz odblokować tego użytkownika?" 
+      : "Czy na pewno chcesz zablokować tego użytkownika? Zablokuje to możliwość jego logowania do systemu.";
+    if (!window.confirm(confirmMsg)) return;
+
+    const res = await apiFetch(`/api/admin/users/${user.id}/block`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ is_blocked: !user.is_blocked })
+    });
+
     if (res.ok) {
-      if (activeUser === userId) setActiveUser(null);
       loadUsers();
     } else {
-      alert("Błąd podczas usuwania użytkownika");
+      alert("Błąd podczas zmiany statusu użytkownika");
     }
   };
 
@@ -339,12 +348,15 @@ export const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout })
                   className="flex items-center gap-3 cursor-pointer mb-2"
                   onClick={() => setActiveUser(u.id)}
                 >
-                  <Users className={`w-4 h-4 ${activeUser === u.id ? 'text-blue-500' : 'text-gray-400'}`} />
-                  <span className={`truncate font-medium text-sm flex-1 ${activeUser === u.id ? 'text-blue-700' : 'text-gray-700'}`}>
+                  <Users className={`w-4 h-4 ${activeUser === u.id ? 'text-blue-500' : 'text-gray-400'} ${u.is_blocked ? 'opacity-50' : ''}`} />
+                  <span className={`truncate font-medium text-sm flex-1 ${activeUser === u.id ? 'text-blue-700' : 'text-gray-700'} ${u.is_blocked ? 'line-through opacity-50' : ''}`}>
                     {u.username}
                   </span>
                   {u.is_admin && (
                     <span className="bg-red-100 text-red-700 text-[10px] font-bold px-1.5 py-0.5 rounded uppercase">Admin</span>
+                  )}
+                  {u.is_blocked && (
+                    <span className="bg-gray-100 text-gray-500 text-[10px] font-bold px-1.5 py-0.5 rounded uppercase">Blokada</span>
                   )}
                 </div>
                 {activeUser === u.id && (
@@ -353,8 +365,16 @@ export const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout })
                       <Key className="w-3 h-3" /> PIN
                     </button>
                     {u.id !== myId && (
-                      <button onClick={() => handleDeleteUser(u.id)} className="text-xs flex items-center gap-1 text-gray-500 hover:text-red-600" title="Usuń trwale">
-                        <Trash2 className="w-3 h-3" /> Usuń
+                      <button 
+                        onClick={() => handleToggleBlock(u)} 
+                        className={`text-xs flex items-center gap-1 hover:text-blue-600 ${u.is_blocked ? 'text-blue-500' : 'text-gray-500'}`} 
+                        title={u.is_blocked ? "Odblokuj konto" : "Zablokuj konto"}
+                      >
+                        {u.is_blocked ? (
+                          <><Unlock className="w-3 h-3" /> Odblokuj</>
+                        ) : (
+                          <><Lock className="w-3 h-3" /> Zablokuj</>
+                        )}
                       </button>
                     )}
                   </div>

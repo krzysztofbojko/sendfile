@@ -35,6 +35,9 @@ class UserCreate(BaseModel):
 class UserPinUpdate(BaseModel):
     pin: str
 
+class UserBlockUpdate(BaseModel):
+    is_blocked: bool
+
 class DirectoryCreate(BaseModel):
     name: str
     owner_id: int
@@ -62,6 +65,12 @@ async def login(request: Request, form_data: OAuth2PasswordRequestForm = Depends
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Niepoprawny login lub kod PIN",
             headers={"WWW-Authenticate": "Bearer"},
+        )
+        
+    if user.is_blocked:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Konto zostało zablokowane",
         )
     
     # Audit log for login
@@ -101,7 +110,7 @@ async def create_user(user: UserCreate, admin: User = Depends(get_current_admin)
 async def list_users(admin: User = Depends(get_current_admin), db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(User))
     users = result.scalars().all()
-    return [{"id": u.id, "username": u.username, "is_admin": u.is_admin} for u in users]
+    return [{"id": u.id, "username": u.username, "is_admin": u.is_admin, "is_blocked": u.is_blocked} for u in users]
 
 @app.get("/api/admin/users/{user_id}/directories")
 async def get_user_directories(user_id: int, admin: User = Depends(get_current_admin), db: AsyncSession = Depends(get_db)):
@@ -181,37 +190,19 @@ async def update_user_pin(user_id: int, pin_data: UserPinUpdate, admin: User = D
     await db.commit()
     return {"status": "ok"}
 
-@app.delete("/api/admin/users/{user_id}")
-async def delete_user(user_id: int, admin: User = Depends(get_current_admin), db: AsyncSession = Depends(get_db)):
+@app.put("/api/admin/users/{user_id}/block")
+async def toggle_block_user(user_id: int, block_data: UserBlockUpdate, admin: User = Depends(get_current_admin), db: AsyncSession = Depends(get_db)):
     if admin.id == user_id:
-        raise HTTPException(status_code=400, detail="Nie możesz usunąć samego siebie")
+        raise HTTPException(status_code=400, detail="Nie możesz zablokować/odblokować samego siebie")
     
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalars().first()
     if not user:
         raise HTTPException(status_code=404, detail="Użytkownik nie istnieje")
 
-    # Kaskadowe usunięcie fizyczne katalogów i plików
-    dirs_result = await db.execute(select(Directory).where(Directory.owner_id == user_id))
-    for directory in dirs_result.scalars().all():
-        if os.path.exists(directory.path_on_disk):
-            shutil.rmtree(directory.path_on_disk, ignore_errors=True)
-            
-    # SQLAlchemy nie usunie automatycznie w asyncpg/sqlite kaskadowo jeśli nie skonfigurujemy cascade="all, delete" w relacji i nie pobierzemy poprawnie danych.
-    # Usuniemy to ręcznie, by zapewnić, że wszystkie powiązane rekordy w DB znikną (pliki, logi, katalogi).
-    files_result = await db.execute(select(File).join(Directory).where(Directory.owner_id == user_id))
-    for f in files_result.scalars().all():
-        await db.delete(f)
-        
-    for d in dirs_result.scalars().all():
-        await db.delete(d)
-        
-    # Uwaga: Celowo NIE usuwamy logów audytowych użytkownika (AuditLog), 
-    # aby zachować historię zdarzeń w celach bezpieczeństwa.
-        
-    await db.delete(user)
+    user.is_blocked = block_data.is_blocked
     await db.commit()
-    return {"status": "ok"}
+    return {"status": "ok", "is_blocked": user.is_blocked}
 
 @app.delete("/api/admin/directories/{dir_id}")
 async def delete_directory(dir_id: int, admin: User = Depends(get_current_admin), db: AsyncSession = Depends(get_db)):
@@ -254,7 +245,7 @@ async def delete_file(file_id: int, admin: User = Depends(get_current_admin), db
 async def get_audit_logs(admin: User = Depends(get_current_admin), db: AsyncSession = Depends(get_db)):
     result = await db.execute(
         select(AuditLog, User.username)
-        .outerjoin(User, AuditLog.user_id == User.id)
+        .join(User, AuditLog.user_id == User.id)
         .order_by(AuditLog.timestamp.desc())
         .limit(100)
     )
@@ -262,7 +253,7 @@ async def get_audit_logs(admin: User = Depends(get_current_admin), db: AsyncSess
     for log, username in result.all():
         logs.append({
             "id": log.id,
-            "username": username or f"Usunięty (ID: {log.user_id})",
+            "username": username,
             "action": log.action,
             "resource": log.resource,
             "timestamp": log.timestamp
