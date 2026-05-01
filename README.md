@@ -75,3 +75,6 @@ docker volume inspect sendfile_sendfile_media
   ```bash
   docker compose up -d --build
   ```
+
+## 5. Licencja
+Ten projekt jest udostępniony na licencji Creative Commons Attribution-NonCommercial-NoDerivs 4.0. Możesz go używać na własne potrzeby, ale nie możesz go modyfikować ani używać w celach komercyjnych.
